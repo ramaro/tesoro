@@ -20,23 +20,29 @@ def prepare_obj(req_uid, req_obj):
         secret_name = req_obj["metadata"]["name"]
         transformations["Secret"] = {"data": {}}
         for item_name, item_value in req_obj["data"].items():
-            decoded_ref = b64decode(item_value).decode()
+            decoded_item = b64decode(item_value).decode()
 
-            is_valid_ref = re.match(REF_TOKEN_TAG_PATTERN, decoded_ref)
-            if not is_valid_ref:
-                continue  # this is not a ref, do nothing
+            valid_refs = re.finditer(REF_TOKEN_TAG_PATTERN, decoded_item)
+            if not valid_refs:
+                continue  # this has no refs, do nothing
             else:
                 logger.debug(
-                    'message="Secret transformation", request_uid=%s, secret_name=%s, decoded_ref=%s',
+                    'message="Secret transformation", request_uid=%s, secret_name=%s, decoded_item=%s',
                     req_uid,
                     secret_name,
-                    decoded_ref,
+                    decoded_item,
                 )
-                # peek and register ref's encoding
-                ref_obj = REF_CONTROLLER[decoded_ref]
-                transformations["Secret"]["data"][item_name] = {"encoding": ref_obj.encoding}
-                # override with ref so we can reveal
-                req_obj["data"][item_name] = decoded_ref
+                # each decoded_item can have multiple refs
+                # peek and register first ref
+                for ref in valid_refs:
+                    ref = ref.groups()[0]
+                    ref_obj = REF_CONTROLLER[ref]
+                    # honor first ref encoding
+                    # a Secret can't have multiple encodings
+                    transformations["Secret"]["data"][item_name] = {"encoding": ref_obj.encoding}
+                    break
+                # override with decoded ref so we can reveal
+                req_obj["data"][item_name] = decoded_item
 
     return transformations
 
